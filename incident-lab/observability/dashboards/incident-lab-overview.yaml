@@ -1,0 +1,201 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: incident-lab-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  incident-lab-overview.json: |
+    {
+      "__inputs": [
+        {
+          "name": "DS_PROMETHEUS",
+          "label": "Prometheus",
+          "type": "datasource",
+          "pluginId": "prometheus",
+          "pluginName": "Prometheus"
+        },
+        {
+          "name": "DS_LOKI",
+          "label": "Loki",
+          "type": "datasource",
+          "pluginId": "loki",
+          "pluginName": "Loki"
+        }
+      ],
+      "title": "Incident Lab Overview",
+      "uid": "incident-lab-overview",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "15s",
+      "time": { "from": "now-30m", "to": "now" },
+      "tags": ["incident-lab"],
+      "templating": { "list": [] },
+      "panels": [
+        {
+          "id": 1,
+          "title": "Request Rate (req/s) – web",
+          "type": "timeseries",
+          "gridPos": { "x": 0, "y": 0, "w": 8, "h": 6 },
+          "targets": [
+            {
+              "expr": "sum(rate(http_requests_total{service=\"web\"}[1m])) by (endpoint)",
+              "legendFormat": "{{endpoint}}",
+              "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "title": "5xx Error Rate – web",
+          "type": "timeseries",
+          "gridPos": { "x": 8, "y": 0, "w": 8, "h": 6 },
+          "targets": [
+            {
+              "expr": "sum(rate(http_requests_total{service=\"web\",status=~\"5..\"}[1m]))",
+              "legendFormat": "5xx/s",
+              "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "title": "p95 Latency (s) – web",
+          "type": "timeseries",
+          "gridPos": { "x": 16, "y": 0, "w": 8, "h": 6 },
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{service=\"web\"}[1m])) by (le))",
+              "legendFormat": "p95",
+              "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "title": "Request Rate (req/s) – api",
+          "type": "timeseries",
+          "gridPos": { "x": 0, "y": 6, "w": 8, "h": 6 },
+          "targets": [
+            {
+              "expr": "sum(rate(http_requests_total{service=\"api\"}[1m])) by (endpoint)",
+              "legendFormat": "{{endpoint}}",
+              "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "title": "5xx Error Rate – api",
+          "type": "timeseries",
+          "gridPos": { "x": 8, "y": 6, "w": 8, "h": 6 },
+          "targets": [
+            {
+              "expr": "sum(rate(http_requests_total{service=\"api\",status=~\"5..\"}[1m]))",
+              "legendFormat": "5xx/s",
+              "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }
+            }
+          ]
+        },
+        {
+          "id": 6,
+          "title": "p95 Latency (s) – api",
+          "type": "timeseries",
+          "gridPos": { "x": 16, "y": 6, "w": 8, "h": 6 },
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{service=\"api\"}[1m])) by (le))",
+              "legendFormat": "p95",
+              "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }
+            }
+          ]
+        },
+        {
+          "id": 7,
+          "title": "Pod Restarts – all namespaces",
+          "type": "timeseries",
+          "gridPos": { "x": 0, "y": 12, "w": 8, "h": 6 },
+          "targets": [
+            {
+              "expr": "increase(kube_pod_container_status_restarts_total{namespace=\"staging\"}[5m])",
+              "legendFormat": "{{pod}}/{{container}}",
+              "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }
+            }
+          ]
+        },
+        {
+          "id": 8,
+          "title": "Container Memory vs Limit – api",
+          "type": "timeseries",
+          "gridPos": { "x": 8, "y": 12, "w": 8, "h": 6 },
+          "targets": [
+            {
+              "expr": "container_memory_working_set_bytes{namespace=\"staging\",container=\"api\"}",
+              "legendFormat": "working_set {{pod}}",
+              "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }
+            },
+            {
+              "expr": "kube_pod_container_resource_limits{namespace=\"staging\",container=\"api\",resource=\"memory\"}",
+              "legendFormat": "limit {{pod}}",
+              "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }
+            }
+          ]
+        },
+        {
+          "id": 9,
+          "title": "Data Volume Used Ratio – api (/data tmpfs)",
+          "type": "timeseries",
+          "gridPos": { "x": 16, "y": 12, "w": 8, "h": 6 },
+          "targets": [
+            {
+              "expr": "app_data_volume_used_ratio{service=\"api\"}",
+              "legendFormat": "ratio {{pod}}",
+              "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }
+            }
+          ]
+        },
+        {
+          "id": 10,
+          "title": "Pod Phase – staging",
+          "type": "stat",
+          "gridPos": { "x": 0, "y": 18, "w": 8, "h": 4 },
+          "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+          "targets": [
+            {
+              "expr": "kube_pod_status_phase{namespace=\"staging\",phase=\"Running\"}",
+              "legendFormat": "Running: {{pod}}",
+              "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }
+            }
+          ]
+        },
+        {
+          "id": 11,
+          "title": "Ready Replicas – staging",
+          "type": "stat",
+          "gridPos": { "x": 8, "y": 18, "w": 8, "h": 4 },
+          "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+          "targets": [
+            {
+              "expr": "kube_deployment_status_replicas_ready{namespace=\"staging\"}",
+              "legendFormat": "{{deployment}}",
+              "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }
+            }
+          ]
+        },
+        {
+          "id": 12,
+          "title": "Recent ERROR Logs",
+          "type": "logs",
+          "gridPos": { "x": 0, "y": 22, "w": 24, "h": 8 },
+          "options": { "dedupStrategy": "none", "showLabels": true, "wrapLogMessage": true },
+          "targets": [
+            {
+              "expr": "{namespace=\"staging\"} |= \"ERROR\" | json",
+              "legendFormat": "",
+              "datasource": { "type": "loki", "uid": "${DS_LOKI}" }
+            }
+          ]
+        }
+      ]
+    }

@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: web-config
+  namespace: staging
+  labels:
+    app: web
+data:
+  API_URL: "http://api-service"
+  SERVICE_NAME: "web"

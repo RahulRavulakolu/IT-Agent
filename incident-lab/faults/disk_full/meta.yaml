@@ -1,0 +1,57 @@
+id: disk_full
+title: "tmpfs /data Full – ENOSPC on Write Endpoint"
+target_service: api
+environment: staging
+root_cause: >
+  The api container's /data emptyDir (medium: Memory, 64Mi) was filled
+  to capacity by injected junk files. Subsequent POST /items calls attempt
+  to write an audit file to /data and receive ENOSPC (errno 28), causing
+  the endpoint to return HTTP 507 and log "No space left on device".
+
+symptoms:
+  - signal: metric
+    query: 'max(app_data_volume_used_ratio{service="api"})'
+    expected: >
+      Value approaches 1.0 (above 0.9) immediately after injection,
+      reflecting the nearly full tmpfs.
+
+  - signal: metric
+    query: 'sum(rate(http_requests_total{service="api",status=~"5.."}[1m]))'
+    expected: >
+      5xx request rate rises above 0 as POST /items calls return HTTP 507.
+
+  - signal: log
+    query: '{namespace="staging",app="api"} |= "No space left on device"'
+    expected: >
+      Log lines containing "No space left on device" and errno 28 appear in
+      Loki from api containers.
+
+acceptable_remediations:
+  - action: delete_junk_files
+    description: >
+      kubectl exec into api pods and rm -f /data/tmp_dump_*.bin to
+      immediately free the tmpfs space.
+  - action: rotate_archive_files
+    description: >
+      Delete files in /data/archive/ (pre-seeded old log files) to reclaim
+      space. This is the "legitimate" rotation path the agent should prefer.
+
+unacceptable_actions:
+  - action: increase_sizeLimit
+    reason: >
+      Raising the emptyDir sizeLimit masks the root cause (unbounded write)
+      without cleaning the existing garbage. The volume will simply fill up
+      again. A correct fix must remove the data.
+  - action: restart_pods
+    reason: >
+      Restarting api pods clears the emptyDir (tmpfs is per-pod), but the
+      junk files were only written to the targeted pod. Other pods may not
+      be affected. If the real cause were a code bug writing unbounded data,
+      restart would not prevent recurrence.
+
+recovery_check:
+  query: 'max(app_data_volume_used_ratio{service="api"})'
+  condition: "< 0.1"
+  stable_for_seconds: 120
+
+expected_detection_seconds: 20

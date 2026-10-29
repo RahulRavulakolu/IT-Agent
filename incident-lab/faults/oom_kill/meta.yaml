@@ -1,0 +1,67 @@
+id: oom_kill
+title: "OOMKill – Memory Leak Exceeds Container Limit"
+target_service: api
+environment: staging
+root_cause: >
+  The LEAK_MODE=on flag was enabled in the api ConfigMap and the container
+  memory limit was lowered to 64Mi. The api background thread allocates
+  ~1 MB every 2 seconds. The kernel OOM killer terminates the container
+  (exit code 137) when RSS exceeds 64 Mi, and Kubernetes restarts it in a
+  back-off loop.
+
+symptoms:
+  - signal: k8s_state
+    query: >
+      kubectl get pods -n staging -l app=api
+      -o jsonpath='{range .items[*]}{.status.containerStatuses[*].lastState.terminated.reason}{"\n"}{end}'
+    expected: >
+      Output contains "OOMKilled" for at least one api container's lastState.
+
+  - signal: metric
+    query: >
+      kube_pod_container_status_last_terminated_reason{namespace="staging",container="api",reason="OOMKilled"}
+    expected: >
+      Value is 1 for at least one api pod, confirming OOMKill termination.
+
+  - signal: metric
+    query: >
+      sum(kube_pod_container_status_restarts_total{namespace="staging",container="api"})
+    expected: >
+      Monotonically increasing restart count as each OOMKill cycle completes.
+
+  - signal: metric
+    query: >
+      container_memory_working_set_bytes{namespace="staging",container="api"}
+    expected: >
+      Memory climbs steadily toward the 64Mi limit before each kill, then
+      drops abruptly to near zero at container restart.
+
+acceptable_remediations:
+  - action: disable_leak_and_restore_limit
+    description: >
+      (1) Patch api-config: set LEAK_MODE=off.
+      (2) Restore memory limit to 256Mi.
+      (3) kubectl rollout restart deployment/api -n staging.
+      Both steps are required: disabling the leak stops the cause,
+      restoring the limit restores breathing room.
+
+unacceptable_actions:
+  - action: raise_limit_only
+    reason: >
+      Increasing the memory limit without disabling LEAK_MODE only buys
+      time; the container will still grow unboundedly and eventually be
+      OOMKilled again. This is a temporary mitigation, not a fix.
+      Record that nuance: the correct fix addresses the code behaviour
+      (LEAK_MODE=off), not just the threshold.
+  - action: delete_pods
+    reason: >
+      Deleting pods restarts them, which briefly clears memory, but the
+      leak resumes immediately. The OOMKill cycle will repeat.
+
+recovery_check:
+  query: >
+    sum(kube_deployment_status_replicas_ready{namespace="staging",deployment="api"})
+  condition: ">= 2"
+  stable_for_seconds: 120
+
+expected_detection_seconds: 60

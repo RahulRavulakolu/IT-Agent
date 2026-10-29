@@ -1,0 +1,100 @@
+# kube-prometheus-stack values for incident-lab
+# Chart version: 61.3.2
+# Tuned for 6 GB RAM / 4 CPU local cluster
+
+nameOverride: kps
+
+# -- Prometheus --
+prometheus:
+  prometheusSpec:
+    retention: 2h
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+      limits:
+        cpu: 1000m
+        memory: 1Gi
+    # Scrape custom serviceMonitors from all namespaces
+    serviceMonitorSelectorNilUsesHelmValues: false
+    serviceMonitorSelector: {}
+    serviceMonitorNamespaceSelector: {}
+    podMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelector: {}
+    podMonitorNamespaceSelector: {}
+    # Attach external labels so we can filter in queries
+    externalLabels:
+      cluster: incident-lab
+
+# -- Grafana --
+grafana:
+  enabled: true
+  adminPassword: "admin"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 300m
+      memory: 256Mi
+  # Auto-provision datasources
+  additionalDataSources:
+    - name: Loki
+      type: loki
+      url: http://loki-gateway.monitoring.svc.cluster.local:80
+      access: proxy
+      isDefault: false
+      jsonData:
+        maxLines: 1000
+  # Load dashboards from ConfigMaps in the monitoring namespace
+  sidecar:
+    dashboards:
+      enabled: true
+      searchNamespace: monitoring
+      label: grafana_dashboard
+      labelValue: "1"
+  grafana.ini:
+    server:
+      root_url: "http://localhost:3000"
+
+# -- Alertmanager -- (no routes yet, just installed)
+alertmanager:
+  enabled: true
+  alertmanagerSpec:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 100m
+        memory: 128Mi
+
+# -- kube-state-metrics --
+kube-state-metrics:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+# -- node-exporter --
+prometheus-node-exporter:
+  resources:
+    requests:
+      cpu: 20m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 64Mi
+
+# Disable unnecessary components to save resources
+kubeEtcd:
+  enabled: false
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeProxy:
+  enabled: false

@@ -1,0 +1,56 @@
+id: bad_config_crashloop
+title: "Bad Config → CrashLoopBackOff"
+target_service: api
+environment: staging
+root_cause: >
+  The api-config ConfigMap was patched with an invalid DATABASE_URL
+  ("not-a-valid-dsn://broken"). The api service validates the DSN prefix
+  at startup and calls sys.exit(1) when validation fails, causing Kubernetes
+  to restart the container in an exponential back-off loop.
+
+symptoms:
+  - signal: k8s_state
+    query: "kubectl get pods -n staging -l app=api"
+    expected: >
+      At least one api pod shows CrashLoopBackOff in the STATUS column
+      and a non-zero RESTARTS count.
+
+  - signal: metric
+    query: >
+      sum(kube_pod_container_status_restarts_total{namespace="staging",container="api"})
+    expected: >
+      Value increases monotonically above 0 as each restart is counted.
+
+  - signal: log
+    query: '{namespace="staging",app="api"} |= "invalid DATABASE_URL"'
+    expected: >
+      Log lines from api containers containing the startup validation error
+      message "ERROR invalid config: invalid DATABASE_URL" appear in Loki.
+
+acceptable_remediations:
+  - action: restore_configmap
+    description: >
+      Patch api-config with a valid postgresql:// DSN, then
+      kubectl rollout restart deployment/api -n staging.
+  - action: kubectl_rollout_restart
+    description: >
+      After restoring the ConfigMap, restart the deployment so pods pick
+      up the corrected config.
+
+unacceptable_actions:
+  - action: raise_restart_limit
+    reason: >
+      Increasing restartPolicy or tolerating more restarts does not fix the
+      root cause; the process will still crash at startup.
+  - action: delete_and_recreate_pods
+    reason: >
+      Deleting pods does not change the ConfigMap; new pods read the same
+      broken config and crash again immediately.
+
+recovery_check:
+  query: >
+    sum(kube_deployment_status_replicas_ready{namespace="staging",deployment="api"})
+  condition: ">= 2"
+  stable_for_seconds: 120
+
+expected_detection_seconds: 30

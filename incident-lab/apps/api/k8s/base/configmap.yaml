@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: api-config
+  namespace: staging
+  labels:
+    app: api
+data:
+  # Valid PostgreSQL DSN – must start with postgresql:// or postgres://
+  # The api service validates this at startup and exits 1 if malformed.
+  DATABASE_URL: "postgresql://labuser:labpass123@db-service:5432/incidentlab"
+  SERVICE_NAME: "api"
+  DATA_DIR: "/data"
+  LEAK_MODE: "off"

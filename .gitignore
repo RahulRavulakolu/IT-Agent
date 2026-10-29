@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+
+# IDE and Agent metadata
+.gemini/
+.agents/
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Docker
+.docker/
+
+# Port-forward PIDs and temporary lab artifacts
+/tmp/incident-lab-ports/
+*.log
+
+# Operating System
+.DS_Store
+Thumbs.db
+desktop.ini

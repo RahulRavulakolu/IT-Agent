@@ -1,0 +1,26 @@
+# postgres-exporter Helm values – chart version 0.15.0
+# Scrapes Postgres metrics and exposes them for Prometheus
+
+config:
+  datasource:
+    host: db-service.staging.svc.cluster.local
+    port: "5432"
+    user: labuser
+    password: labpass123
+    database: incidentlab
+    sslmode: disable
+
+resources:
+  requests:
+    cpu: 20m
+    memory: 32Mi
+  limits:
+    cpu: 100m
+    memory: 64Mi
+
+# Prometheus serviceMonitor auto-created
+serviceMonitor:
+  enabled: true
+  namespace: monitoring
+  labels:
+    release: kps

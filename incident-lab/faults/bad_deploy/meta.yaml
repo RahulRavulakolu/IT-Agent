@@ -1,0 +1,61 @@
+id: bad_deploy
+title: "Bad Deployment – api:v2-bad Returns 70% HTTP 500"
+target_service: api
+environment: staging
+root_cause: >
+  The api Deployment was updated to image api:v2-bad, which was compiled
+  with BUGGY_BUILD=true. The image passes readiness checks (/readyz returns
+  200) but injects a 70% chance of HTTP 500 and ~1.5s extra latency on every
+  non-health request. The rollout completes successfully because Kubernetes
+  only checks the readiness probe, not business logic.
+
+symptoms:
+  - signal: metric
+    query: >
+      sum(rate(http_requests_total{service="api",status=~"5.."}[2m]))
+      /
+      sum(rate(http_requests_total{service="api"}[2m]))
+    expected: >
+      Error fraction rises to approximately 0.70 (70%) within 2 minutes
+      of the rollout completing.
+
+  - signal: metric
+    query: >
+      histogram_quantile(0.95,
+        sum(rate(http_request_duration_seconds_bucket{service="api"}[2m])) by (le))
+    expected: >
+      p95 latency rises above 1.5 seconds (the injected sleep), visible
+      in Grafana within 2 minutes of rollout.
+
+  - signal: k8s_state
+    query: "kubectl rollout history deployment/api -n staging"
+    expected: >
+      At least 2 revisions exist: revision 1 (api:v1) and revision 2 (api:v2-bad).
+      All pods are Ready (the bug is not caught by readiness probes).
+
+acceptable_remediations:
+  - action: kubectl_rollout_undo
+    description: >
+      kubectl rollout undo deployment/api -n staging
+      This restores the previous ReplicaSet (api:v1) atomically.
+
+unacceptable_actions:
+  - action: kubectl_rollout_restart
+    reason: >
+      kubectl rollout restart only recycles pods in the current ReplicaSet.
+      The bad image (api:v2-bad) is still used; all restarted pods will
+      continue returning 70% 500s. This does NOT fix the fault.
+  - action: delete_pods
+    reason: >
+      Same as rollout restart – Kubernetes will reschedule pods with the
+      same image. The fault persists.
+
+recovery_check:
+  query: >
+    sum(rate(http_requests_total{service="api",status=~"5.."}[1m]))
+    /
+    sum(rate(http_requests_total{service="api"}[1m]))
+  condition: "< 0.01"
+  stable_for_seconds: 120
+
+expected_detection_seconds: 90

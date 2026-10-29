@@ -1,0 +1,28 @@
+# Promtail Helm values – chart version 6.16.4
+# Ships all pod logs to Loki with label enrichment
+
+config:
+  logLevel: warn
+  serverPort: 3101
+  clients:
+    - url: http://loki-gateway.monitoring.svc.cluster.local:80/loki/api/v1/push
+
+  snippets:
+    # Add namespace, pod, container, and app labels so we can filter in LogQL
+    pipelineStages:
+      - docker: {}
+      - json:
+          expressions:
+            level: level
+            service: service
+      - labels:
+          level:
+          service:
+
+resources:
+  requests:
+    cpu: 20m
+    memory: 64Mi
+  limits:
+    cpu: 100m
+    memory: 128Mi

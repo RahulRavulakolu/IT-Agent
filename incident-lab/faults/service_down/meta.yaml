@@ -1,0 +1,49 @@
+id: service_down
+title: "Web Service Completely Down (scaled to 0)"
+target_service: web
+environment: staging
+root_cause: >
+  The web Deployment was deliberately scaled to 0 replicas. No pods are
+  scheduled, so all inbound traffic from the load generator immediately
+  fails with connection refused.
+
+symptoms:
+  - signal: metric
+    query: 'kube_deployment_status_replicas_ready{namespace="staging",deployment="web"}'
+    expected: >
+      Value is 0 (no ready pods).
+
+  - signal: metric
+    query: 'kube_deployment_spec_replicas{namespace="staging",deployment="web"}'
+    expected: >
+      Value is 0, confirming the deployment was intentionally scaled down
+      (distinguishes from a crash loop where spec.replicas would still be 2).
+
+  - signal: k8s_state
+    query: "kubectl get pods -n staging -l app=web"
+    expected: >
+      No pods are listed (the command returns an empty list or
+      "No resources found").
+
+acceptable_remediations:
+  - action: scale_web_to_baseline
+    description: >
+      kubectl scale deployment/web -n staging --replicas=2
+      Then wait for rollout status to report success.
+
+unacceptable_actions:
+  - action: delete_service
+    reason: >
+      Deleting or recreating the web Service object does not affect pod
+      count and does not restore availability.
+  - action: restart_loadgen
+    reason: >
+      Restarting the load generator does not restore the web service;
+      it will keep failing until web pods exist again.
+
+recovery_check:
+  query: 'kube_deployment_status_replicas_ready{namespace="staging",deployment="web"}'
+  condition: ">= 2"
+  stable_for_seconds: 120
+
+expected_detection_seconds: 15
