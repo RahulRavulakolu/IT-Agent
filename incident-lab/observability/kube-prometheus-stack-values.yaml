@@ -22,6 +22,9 @@ prometheus:
     podMonitorSelectorNilUsesHelmValues: false
     podMonitorSelector: {}
     podMonitorNamespaceSelector: {}
+    ruleSelectorNilUsesHelmValues: false
+    ruleSelector: {}
+    ruleNamespaceSelector: {}
     # Attach external labels so we can filter in queries
     externalLabels:
       cluster: incident-lab
@@ -57,10 +60,12 @@ grafana:
     server:
       root_url: "http://localhost:3000"
 
-# -- Alertmanager -- (no routes yet, just installed)
+# -- Alertmanager --
 alertmanager:
   enabled: true
   alertmanagerSpec:
+    alertmanagerConfigSelector: {}
+    alertmanagerConfigNamespaceSelector: {}
     resources:
       requests:
         cpu: 50m

@@ -41,5 +41,15 @@ info "Loading loadgen:v1 ..."
 kind load docker-image loadgen:v1 --name "${CLUSTER_NAME}"
 ok "loadgen:v1 loaded"
 
+# --- event-gateway (Phase 1) ---
+if [[ -d "${REPO_ROOT}/../event-gateway" ]]; then
+  info "Building event-gateway:v1 ..."
+  docker build -t event-gateway:v1 "${REPO_ROOT}/../event-gateway"
+  ok "event-gateway:v1 built"
+  info "Loading event-gateway:v1 ..."
+  kind load docker-image event-gateway:v1 --name "${CLUSTER_NAME}"
+  ok "event-gateway:v1 loaded"
+fi
+
 echo ""
 ok "All images built and loaded successfully."

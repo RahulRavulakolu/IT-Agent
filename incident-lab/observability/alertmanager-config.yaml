@@ -1,0 +1,49 @@
+# Phase 1 – Alertmanager configuration for incident-lab.
+# Deploys as an AlertmanagerConfig CRD (namespace-scoped, picked up by kps Alertmanager).
+#
+# Routes all incident-lab alerts (label: app=incident-lab) to the event-gateway
+# webhook receiver. Prometheus→Alertmanager→event-gateway.
+#
+# The global Alertmanager (kps) continues to operate; we only add a sub-route.
+apiVersion: monitoring.coreos.com/v1alpha1
+kind: AlertmanagerConfig
+metadata:
+  name: incident-lab-routes
+  namespace: monitoring
+  labels:
+    release: kps
+    app: incident-lab
+    phase: "1"
+spec:
+  route:
+    # Match only incident-lab alerts
+    matchers:
+      - name: app
+        value: incident-lab
+        matchType: "="
+    receiver: event-gateway
+    groupBy:
+      - alertname
+      - service
+      - environment
+    groupWait: 30s
+    groupInterval: 5m
+    repeatInterval: 4h
+    # Sub-route for critical alerts: shorter repeat interval
+    routes:
+      - matchers:
+          - name: severity
+            value: critical
+            matchType: "="
+        receiver: event-gateway
+        groupWait: 10s
+        groupInterval: 1m
+        repeatInterval: 1h
+
+  receivers:
+    - name: event-gateway
+      webhookConfigs:
+        - url: "http://event-gateway-service.monitoring.svc.cluster.local:8000/api/v1/alerts"
+          sendResolved: true
+          # Limit notifications to batches of at most 50 alerts.
+          maxAlerts: 50

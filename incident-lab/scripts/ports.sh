@@ -48,6 +48,10 @@ start_all() {
   start_forward web      "$NS"     "svc/web-service"               8080 80
   # api  (direct access for debugging)
   start_forward api      "$NS"     "svc/api-service"               8081 80
+  # event-gateway (Phase 1)
+  if kubectl get svc/event-gateway-service -n "$MON_NS" &>/dev/null; then
+    start_forward gateway "$MON_NS" "svc/event-gateway-service"     8000 8000
+  fi
 
   echo ""
   echo -e "${BOLD}Port-forwards active:${NC}"
@@ -56,6 +60,7 @@ start_all() {
   echo "  Loki:       http://127.0.0.1:3100"
   echo "  web:        http://127.0.0.1:8080"
   echo "  api:        http://127.0.0.1:8081"
+  echo "  gateway:    http://127.0.0.1:8000  (Phase 1)"
   echo ""
   echo "Stop with: scripts/ports.sh stop"
 }

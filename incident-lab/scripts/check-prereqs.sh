@@ -74,6 +74,17 @@ check_cmd curl "Install with: sudo apt-get install curl  /  brew install curl"
 # --- jq ---
 check_cmd jq "Install with: sudo apt-get install jq  /  brew install jq"
 
+# --- bc  (used by verify scripts for floating-point comparisons) ---
+check_cmd bc "Install with: sudo apt-get install bc  /  brew install bc"
+
+# --- python3 (used as fallback for date arithmetic in verify scripts) ---
+if ! command -v python3 &>/dev/null; then
+  warn "python3 not found – Loki timestamp fallback in verify scripts may produce wrong results."
+  warn "Install with: sudo apt-get install python3  /  brew install python3"
+else
+  ok "python3 found at $(command -v python3)"
+fi
+
 # --- docker build (check for buildkit) ---
 if command -v docker &>/dev/null && docker info &>/dev/null; then
   if docker buildx version &>/dev/null; then

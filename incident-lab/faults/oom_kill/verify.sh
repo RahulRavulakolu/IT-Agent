@@ -5,7 +5,7 @@ set -euo pipefail
 
 NS="${NAMESPACE:-staging}"
 PROM_URL="${PROM_URL:-http://127.0.0.1:9090}"
-TIMEOUT=${TIMEOUT_SECONDS:-180}
+TIMEOUT=${TIMEOUT_SECONDS:-300}
 INTERVAL=15  # OOMKill takes a bit longer to manifest
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'

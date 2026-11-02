@@ -29,7 +29,8 @@ FAULTS := bad_config_crashloop disk_full service_down oom_kill bad_deploy
 
 .PHONY: help up down status ports load-start load-stop \
         inject verify reset reset-all test-faults \
-        _cluster _namespaces _observability _app _loadgen
+        _cluster _namespaces _observability _app _loadgen \
+        gateway-up gateway-down gateway-test alerts-status incidents
 
 ## ── Default target ────────────────────────────────────────────────────────────
 help:
@@ -48,17 +49,22 @@ help:
 	@echo "  make reset  FAULT=<id>  Restore baseline after a fault"
 	@echo "  make reset-all          Reset all faults to baseline"
 	@echo "  make test-faults        Run inject+verify+reset for every fault; print table"
+	@echo "  make gateway-up         Deploy event-gateway and alerts (Phase 1)"
+	@echo "  make gateway-test       Run unit and integration tests for event-gateway"
+	@echo "  make alerts-status      Show active alerts in Prometheus"
+	@echo "  make incidents          List incidents ingested by event-gateway"
 	@echo ""
 	@echo "  Faults: $(FAULTS)"
 	@echo ""
 
 ## ── Full stack up ─────────────────────────────────────────────────────────────
-up: _prereqs _cluster _namespaces _images _observability _app _loadgen
+up: _prereqs _cluster _namespaces _images _observability _app _loadgen gateway-up
 	@echo ""
 	@echo "╔══════════════════════════════════════════════════════════╗"
-	@echo "║  Incident Lab is UP  ✓                                   ║"
+	@echo "║  Incident Lab is UP (Phase 0 + Phase 1)  ✓               ║"
 	@echo "║  Run: make ports   →  start port-forwards                ║"
 	@echo "║  Run: make status  →  health summary                     ║"
+	@echo "║  Run: make incidents → view ingested alerts/incidents    ║"
 	@echo "╚══════════════════════════════════════════════════════════╝"
 
 _prereqs:
@@ -117,6 +123,14 @@ _observability:
 	@kubectl apply -f $(REPO_ROOT)/observability/servicemonitors/app-servicemonitors.yaml
 	@echo "[obs] Applying Grafana dashboard ConfigMap..."
 	@kubectl apply -f $(REPO_ROOT)/observability/dashboards/incident-lab-overview.yaml
+	@if [ -f "$(REPO_ROOT)/observability/alert-rules/incident-lab-alerts.yaml" ]; then \
+	  echo "[obs] Applying Prometheus alert rules (Phase 1)..."; \
+	  kubectl apply -f $(REPO_ROOT)/observability/alert-rules/incident-lab-alerts.yaml; \
+	fi
+	@if [ -f "$(REPO_ROOT)/observability/alertmanager-config.yaml" ]; then \
+	  echo "[obs] Applying Alertmanager routes (Phase 1)..."; \
+	  kubectl apply -f $(REPO_ROOT)/observability/alertmanager-config.yaml; \
+	fi
 	@echo "[obs] Observability stack ready."
 
 _app:
@@ -267,3 +281,31 @@ test-faults:
 	echo "  FAILED: $$FAIL / 5"; \
 	echo "════════════════════════════════════════"; \
 	if [[ $$FAIL -gt 0 ]]; then exit 1; fi
+
+## ── Phase 1: Event Gateway & Alert Targets ──────────────────────────────────
+gateway-up:
+	@echo "=== [Phase 1] Deploying Event Gateway ==="
+	@if [ -d "$(REPO_ROOT)/../event-gateway/k8s" ]; then \
+	  kubectl apply -k $(REPO_ROOT)/../event-gateway/k8s; \
+	  echo "[gateway] Waiting for event-gateway rollout..."; \
+	  kubectl rollout status deployment/event-gateway -n monitoring --timeout=120s; \
+	  echo "[gateway] Event Gateway is ready in monitoring namespace."; \
+	fi
+
+gateway-down:
+	@echo "=== [Phase 1] Removing Event Gateway ==="
+	@if [ -d "$(REPO_ROOT)/../event-gateway/k8s" ]; then \
+	  kubectl delete -k $(REPO_ROOT)/../event-gateway/k8s --ignore-not-found; \
+	fi
+
+gateway-test:
+	@echo "=== [Phase 1] Running Event Gateway Unit & Integration Tests ==="
+	@cd $(REPO_ROOT)/../event-gateway && pytest -v tests/
+
+alerts-status:
+	@echo "=== Active Alerts (Prometheus) ==="
+	@curl -sf "$(PROM_URL)/api/v1/alerts" 2>/dev/null | jq '.data.alerts[] | {alertname: .labels.alertname, state: .state, severity: .labels.severity, service: .labels.service}' || echo "Prometheus port-forward not active. Run 'make ports' first."
+
+incidents:
+	@echo "=== Ingested Incidents (Event Gateway) ==="
+	@curl -sf "http://127.0.0.1:8000/api/v1/incidents" 2>/dev/null | jq . || echo "Gateway port-forward not active or no incidents found. Check 'http://127.0.0.1:8000/api/v1/incidents'."

@@ -1,0 +1,219 @@
+# Phase 1 – Prometheus alert rules for the 5 incident-lab fault types.
+# Deployed as a PrometheusRule CRD so kube-prometheus-stack picks them up automatically.
+# All rules are labelled release=kps to match the PrometheusRule selector installed by
+# kube-prometheus-stack (chart 61.3.2, nameOverride: kps).
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: incident-lab-alerts
+  namespace: monitoring
+  labels:
+    release: kps              # must match kps prometheusSpec.ruleSelector
+    app: incident-lab
+    phase: "1"
+spec:
+  groups:
+
+    # ── bad_config_crashloop ──────────────────────────────────────────────────
+    - name: incident-lab.crashloop
+      interval: 30s
+      rules:
+
+        - alert: ApiCrashLoopBackOff
+          # Fires when the restart counter for ANY api container has increased by
+          # at least 1 in the last 5 minutes (rate window) and is still non-zero.
+          expr: >
+            sum(increase(kube_pod_container_status_restarts_total{
+              namespace="staging", container="api"
+            }[5m])) > 0
+          for: 1m
+          labels:
+            app: incident-lab
+            severity: critical
+            fault_type: bad_config_crashloop
+            service: api
+            environment: staging
+          annotations:
+            summary: "api containers are restarting repeatedly (CrashLoopBackOff)"
+            description: >
+              The restart counter for api containers in staging has increased by
+              {{ $value | humanize }} in the last 5 minutes.
+              This typically indicates a config error (e.g. invalid DATABASE_URL)
+              causing the process to crash at startup.
+            runbook: "See faults/bad_config_crashloop/meta.yaml"
+            dashboard: "http://127.0.0.1:3000/d/incident-lab"
+
+    # ── disk_full ─────────────────────────────────────────────────────────────
+    - name: incident-lab.disk
+      interval: 30s
+      rules:
+
+        - alert: ApiDataVolumeFull
+          # Fires when the /data tmpfs on any api instance is more than 85 % full.
+          # Uses the custom gauge exported by the api service itself.
+          expr: >
+            max(app_data_volume_used_ratio{service="api"}) > 0.85
+          for: 1m
+          labels:
+            app: incident-lab
+            severity: warning
+            fault_type: disk_full
+            service: api
+            environment: staging
+          annotations:
+            summary: "api /data volume is {{ $value | humanizePercentage }} full"
+            description: >
+              The app_data_volume_used_ratio for the api service has exceeded 0.85.
+              POST /items calls will start returning HTTP 507 (Insufficient Storage)
+              once the tmpfs reaches capacity.
+            runbook: "See faults/disk_full/meta.yaml"
+            dashboard: "http://127.0.0.1:3000/d/incident-lab"
+
+        - alert: ApiDataVolumeCritical
+          expr: >
+            max(app_data_volume_used_ratio{service="api"}) > 0.95
+          for: 30s
+          labels:
+            app: incident-lab
+            severity: critical
+            fault_type: disk_full
+            service: api
+            environment: staging
+          annotations:
+            summary: "api /data volume critically full ({{ $value | humanizePercentage }})"
+            description: >
+              The /data tmpfs is above 95% capacity. POST /items is returning HTTP 507.
+            runbook: "See faults/disk_full/meta.yaml"
+
+    # ── service_down ──────────────────────────────────────────────────────────
+    - name: incident-lab.availability
+      interval: 15s
+      rules:
+
+        - alert: WebServiceDown
+          # Fires as soon as web has 0 ready replicas (including scaled-to-zero).
+          expr: >
+            kube_deployment_status_replicas_ready{
+              namespace="staging", deployment="web"
+            } == 0
+          for: 30s
+          labels:
+            app: incident-lab
+            severity: critical
+            fault_type: service_down
+            service: web
+            environment: staging
+          annotations:
+            summary: "web service has 0 ready replicas – completely unavailable"
+            description: >
+              kube_deployment_status_replicas_ready for web is 0.
+              All inbound traffic from the load generator is failing with
+              connection refused.
+            runbook: "See faults/service_down/meta.yaml"
+            dashboard: "http://127.0.0.1:3000/d/incident-lab"
+
+    # ── oom_kill ──────────────────────────────────────────────────────────────
+    - name: incident-lab.oom
+      interval: 30s
+      rules:
+
+        - alert: ApiOOMKilled
+          # kube-state-metrics exposes the last termination reason as a gauge.
+          # A value of 1 means the last termination was OOMKilled.
+          expr: >
+            kube_pod_container_status_last_terminated_reason{
+              namespace="staging", container="api", reason="OOMKilled"
+            } == 1
+          for: 0s          # fire immediately – OOMKill is already a completed event
+          labels:
+            app: incident-lab
+            severity: critical
+            fault_type: oom_kill
+            service: api
+            environment: staging
+          annotations:
+            summary: "api container was OOMKilled (exit code 137)"
+            description: >
+              At least one api container in staging was terminated by the kernel
+              OOM killer (exit code 137). This means the container exceeded its
+              memory limit. Check if LEAK_MODE is enabled and/or the memory
+              limit has been lowered.
+            runbook: "See faults/oom_kill/meta.yaml"
+            dashboard: "http://127.0.0.1:3000/d/incident-lab"
+
+        - alert: ApiMemoryNearLimit
+          # Early warning: memory working set within 80 % of the declared limit.
+          # container_memory_working_set_bytes is from cadvisor.
+          # kube_pod_container_resource_limits is from kube-state-metrics.
+          expr: >
+            (
+              container_memory_working_set_bytes{
+                namespace="staging", container="api"
+              }
+              /
+              kube_pod_container_resource_limits{
+                namespace="staging", container="api", resource="memory"
+              }
+            ) > 0.80
+          for: 1m
+          labels:
+            app: incident-lab
+            severity: warning
+            fault_type: oom_kill
+            service: api
+            environment: staging
+          annotations:
+            summary: "api container memory at {{ $value | humanizePercentage }} of limit"
+            description: >
+              api container working set memory is {{ $value | humanizePercentage }}
+              of its declared limit. If this trend continues the container will
+              be OOMKilled.
+
+    # ── bad_deploy ────────────────────────────────────────────────────────────
+    - name: incident-lab.error-rate
+      interval: 30s
+      rules:
+
+        - alert: ApiBadDeploy
+          # Fires when the fraction of 5xx responses exceeds 30 % over a 2-minute window.
+          # A lower threshold than the injected 70 % to allow for warm-up.
+          expr: >
+            (
+              sum(rate(http_requests_total{service="api", status=~"5.."}[2m]))
+              /
+              sum(rate(http_requests_total{service="api"}[2m]))
+            ) > 0.30
+          for: 2m
+          labels:
+            app: incident-lab
+            severity: warning
+            fault_type: bad_deploy
+            service: api
+            environment: staging
+          annotations:
+            summary: "api 5xx error rate is {{ $value | humanizePercentage }}"
+            description: >
+              More than 30 % of api requests are returning HTTP 5xx.
+              This may indicate a bad deployment (e.g. api:v2-bad image).
+              Check rollout history: kubectl rollout history deployment/api -n staging
+            runbook: "See faults/bad_deploy/meta.yaml"
+            dashboard: "http://127.0.0.1:3000/d/incident-lab"
+
+        - alert: ApiHighLatency
+          # Fires when p95 latency exceeds 1 s over a 2-minute window.
+          expr: >
+            histogram_quantile(0.95,
+              sum(rate(http_request_duration_seconds_bucket{service="api"}[2m])) by (le)
+            ) > 1.0
+          for: 2m
+          labels:
+            app: incident-lab
+            severity: warning
+            fault_type: bad_deploy
+            service: api
+            environment: staging
+          annotations:
+            summary: "api p95 latency is {{ $value | humanizeDuration }}"
+            description: >
+              api p95 request latency exceeds 1 second.
+              This typically accompanies a bad deployment that injects sleep.

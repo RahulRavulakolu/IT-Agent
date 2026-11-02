@@ -21,8 +21,10 @@ check_prom() {
 }
 
 check_loki() {
+  local since="${2:-5m}"
   local start_ns
-  start_ns=$(python3 -c "import time; print(int((time.time()-300)*1e9))" 2>/dev/null || echo "0")
+  # prefer GNU date -d; fall back to python3 (matches bad_config_crashloop pattern)
+  start_ns=$(date -d "-${since}" +%s%N 2>/dev/null || python3 -c "import time; print(int((time.time()-300)*1e9))")
   curl -sf "${LOKI_URL}/loki/api/v1/query_range" \
     --data-urlencode "query=${1}" \
     --data-urlencode "start=${start_ns}" \

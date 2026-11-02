@@ -1,0 +1,19 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: event-gateway-monitor
+  namespace: monitoring
+  labels:
+    release: kps
+    app: event-gateway
+spec:
+  namespaceSelector:
+    matchNames:
+      - monitoring
+  selector:
+    matchLabels:
+      app: event-gateway
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s

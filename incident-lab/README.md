@@ -16,8 +16,14 @@ Later phases will add an AI agent (LangGraph + MCP) that detects, investigates, 
 | curl | any | system package manager |
 | jq | any | system package manager |
 
-> **WSL2 note**: The workspace lives at `c:\IT agent\incident-lab` (Windows) ≡  
-> `/mnt/c/IT agent/incident-lab` (WSL2). Run all commands from WSL2.
+> **WSL2 note**: Run all commands from inside WSL2. Navigate to the repo root with:
+> ```bash
+> # If you cloned to a Windows path, mount it via /mnt/c/... for example:
+> cd /mnt/c/Users/<YOUR_USER>/path/to/IT-Agent-main/incident-lab
+> # Or, from within WSL2 where you cloned directly:
+> cd ~/IT-Agent/incident-lab
+> ```
+> All `make` commands must be run from the `incident-lab/` directory.
 
 ---
 
@@ -78,12 +84,14 @@ flowchart TB
 
         subgraph MON["namespace: monitoring"]
             PROM["Prometheus\n(kube-prometheus-stack)"]
-            AM["Alertmanager\n(no routes yet)"]
+            AM["Alertmanager\n(webhook router)"]
             GF["Grafana\n(dashboard: Incident Lab Overview)"]
             LOKI["Loki\n(single-binary)"]
             PT["Promtail\n(log shipper)"]
             PGE["postgres-exporter"]
+            GW["event-gateway:v1\n(FastAPI: dedup + correlation)"]
             PROM --> AM
+            AM -->|"POST /api/v1/alerts"| GW
             PROM --> GF
             LOKI --> GF
             PT -->|"push logs"| LOKI
@@ -93,6 +101,7 @@ flowchart TB
         WEB -->|"/metrics ServiceMonitor"| PROM
         PGE -->|"pg_stat"| DB
         PGE -->|"/metrics"| PROM
+        GW -->|"persist incidents"| DB
         PT -->|"collect pod logs"| API
         PT -->|"collect pod logs"| WEB
     end
@@ -101,6 +110,7 @@ flowchart TB
     PF -.->|"9090"| PROM
     PF -.->|"3100"| LOKI
     PF -.->|"8080"| WEB
+    PF -.->|"8000"| GW
 ```
 
 ---

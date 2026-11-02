@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: event-gateway-config
+  namespace: monitoring
+data:
+  DATABASE_URL: "postgresql://labuser:labpass123@db-service.staging.svc.cluster.local:5432/incidentlab"
+  LOG_LEVEL: "INFO"
+  CORRELATION_WINDOW_SECONDS: "300"
